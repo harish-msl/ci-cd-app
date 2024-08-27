@@ -60,9 +60,9 @@ pipeline {
                             --parameters 'commands=[
                                 "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URI}",
                                 "docker pull ${ECR_REPO_URI}:latest",
-                                "docker stop my-container || true",
-                                "docker rm my-container || true",
-                                "docker run -d --name my-container -p 80:80 ${ECR_REPO_URI}:latest"
+                                "docker stop ci-cd-app-api-container || true",
+                                "docker rm ci-cd-app-api-container || true",
+                                "docker run -d --name ci-cd-app-api-container -p 80:80 ${ECR_REPO_URI}:latest"
                             ]' \
                             --region ${AWS_REGION}
                         """
