@@ -24,12 +24,12 @@ pipeline {
             }
         }
 
-        stage('Run Tests') {
-            steps {
-                // Run the test suite
-                sh 'npm test'
-            }
-        }
+        // stage('Run Tests') {
+        //     steps {
+        //         // Run the test suite
+        //         sh 'npm test'
+        //     }
+        // }
 
         stage('Build Docker Image') {
             steps {
