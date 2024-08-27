@@ -24,18 +24,11 @@ pipeline {
             }
         }
 
-        // stage('Run Tests') {
-        //     steps {
-        //         // Run the test suite
-        //         sh 'npm test'
-        //     }
-        // }
-
         stage('Build Docker Image') {
             steps {
                 script {
                     // Build the Docker image
-                    docker.build("${DOCKER_IMAGE}")
+                    sh "docker build -t ${DOCKER_IMAGE} ."
                 }
             }
         }
@@ -44,10 +37,12 @@ pipeline {
             steps {
                 script {
                     // Log in to AWS ECR and push the Docker image
-                    withCredentials([usernamePassword(credentialsId: '${AWS_CREDENTIALS_ID}', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                        sh '$(aws ecr get-login-password --region ${AWS_REGION}) | docker login --username AWS --password-stdin ${ECR_REPO_URI}'
-                        docker.tag("${DOCKER_IMAGE}", "${ECR_REPO_URI}:latest")
-                        docker.push("${ECR_REPO_URI}:latest")
+                    withCredentials([usernamePassword(credentialsId: AWS_CREDENTIALS_ID, usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                        sh """
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URI}
+                        docker tag ${DOCKER_IMAGE} ${ECR_REPO_URI}:latest
+                        docker push ${ECR_REPO_URI}:latest
+                        """
                     }
                 }
             }
@@ -57,20 +52,20 @@ pipeline {
             steps {
                 script {
                     // Deploy Docker container to EC2 instance using AWS SSM
-                    withCredentials([usernamePassword(credentialsId: '${AWS_CREDENTIALS_ID}', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                        sh '''
+                    withCredentials([usernamePassword(credentialsId: AWS_CREDENTIALS_ID, usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                        sh """
                         aws ssm send-command \
                             --document-name "AWS-RunShellScript" \
-                            --targets "Key=instanceids,Values=${INSTANCE_ID}" \
+                            --targets "Key=instanceIds,Values=${INSTANCE_ID}" \
                             --parameters 'commands=[
-                                "docker login --username AWS --password \$(aws ecr get-login-password --region ${AWS_REGION}) ${ECR_REPO_URI}",
+                                "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URI}",
                                 "docker pull ${ECR_REPO_URI}:latest",
                                 "docker stop my-container || true",
                                 "docker rm my-container || true",
                                 "docker run -d --name my-container -p 80:80 ${ECR_REPO_URI}:latest"
                             ]' \
                             --region ${AWS_REGION}
-                        '''
+                        """
                     }
                 }
             }
