@@ -2,59 +2,93 @@ pipeline {
     agent any
 
     environment {
-        NODE_ENV = 'production'
+        DOCKER_IMAGE = 'ci-cd-app/backend:latest'
+        ECR_REPO_URI = '851725538406.dkr.ecr.ap-southeast-2.amazonaws.com/ci-cd-app/backend'
+        AWS_REGION = 'ap-southeast-2'
+        INSTANCE_ID = 'i-03f0d71decab318d5' // Replace with your EC2 instance ID
+        AWS_CREDENTIALS_ID = 'aws-credentials-id' // Replace with the Jenkins credentials ID for AWS
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Pull the code from the GitHub repository
+                // Clone the GitHub repository
                 git branch: 'main', url: 'https://github.com/harish-msl/ci-cd-app.git'
             }
         }
 
         stage('Install Dependencies') {
             steps {
-                // Install the Node.js dependencies
+                // Install Node.js dependencies
                 sh 'npm install'
             }
         }
 
         stage('Run Tests') {
             steps {
-                // Run the tests
+                // Run the test suite
                 sh 'npm test'
             }
         }
 
-        stage('Build') {
+        stage('Build Docker Image') {
             steps {
-                // Build the application
-                sh 'npm run build'
+                script {
+                    // Build the Docker image
+                    docker.build("${DOCKER_IMAGE}")
+                }
             }
         }
 
-        stage('Deploy') {
+        stage('Push Docker Image to ECR') {
             steps {
-                // Here you would deploy your application
-                // This could be an SCP command, or using a deployment tool like PM2, Docker, etc.
-                echo 'Deploying the application...'
+                script {
+                    // Log in to AWS ECR and push the Docker image
+                    withCredentials([usernamePassword(credentialsId: '${AWS_CREDENTIALS_ID}', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                        sh '$(aws ecr get-login-password --region ${AWS_REGION}) | docker login --username AWS --password-stdin ${ECR_REPO_URI}'
+                        docker.tag("${DOCKER_IMAGE}", "${ECR_REPO_URI}:latest")
+                        docker.push("${ECR_REPO_URI}:latest")
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to EC2') {
+            steps {
+                script {
+                    // Deploy Docker container to EC2 instance using AWS SSM
+                    withCredentials([usernamePassword(credentialsId: '${AWS_CREDENTIALS_ID}', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                        sh '''
+                        aws ssm send-command \
+                            --document-name "AWS-RunShellScript" \
+                            --targets "Key=instanceids,Values=${INSTANCE_ID}" \
+                            --parameters 'commands=[
+                                "docker login --username AWS --password \$(aws ecr get-login-password --region ${AWS_REGION}) ${ECR_REPO_URI}",
+                                "docker pull ${ECR_REPO_URI}:latest",
+                                "docker stop my-container || true",
+                                "docker rm my-container || true",
+                                "docker run -d --name my-container -p 80:80 ${ECR_REPO_URI}:latest"
+                            ]' \
+                            --region ${AWS_REGION}
+                        '''
+                    }
+                }
             }
         }
     }
-
+    
     post {
         always {
-            // Clean up workspace after build
+            // Clean up the workspace after the pipeline
             cleanWs()
         }
         success {
-            // Notify success
-            echo 'Build and deployment successful!'
+            // Notification on success
+            echo 'Build, test, and deployment successful!'
         }
         failure {
-            // Notify failure
-            echo 'Build or deployment failed!'
+            // Notification on failure
+            echo 'Build, test, or deployment failed!'
         }
     }
 }
