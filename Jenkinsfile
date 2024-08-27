@@ -62,7 +62,7 @@ pipeline {
                                 "docker pull ${ECR_REPO_URI}:latest",
                                 "docker stop ci-cd-app-api-container || true",
                                 "docker rm ci-cd-app-api-container || true",
-                                "docker run -d --name ci-cd-app-api-container -p 80:80 ${ECR_REPO_URI}:latest"
+                                "docker run -d --name ci-cd-app-api-container -p 3000:3000 ${ECR_REPO_URI}:latest"
                             ]' \
                             --region ${AWS_REGION}
                         """
